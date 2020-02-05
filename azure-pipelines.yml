@@ -1,0 +1,120 @@
+pool:
+  vmImage: "vs2017-win2016"
+
+# Builds the ContentReactor audio microservice resources
+
+name: $(BuildID)
+
+steps:
+
+  # Build the APIs
+  - task: DotNetCoreCLI@1
+    displayName: Run dotnet restore
+    inputs:
+      command: "restore"
+      projects: "**/src/**/*.csproj"
+
+  - task: DotNetCoreCLI@1
+    displayName: Run dotnet build
+    inputs:
+      projects: "**/src/**/*.csproj"
+
+  - task: DotNetCoreCLI@1
+    displayName: Run dotnet publish
+    inputs:
+      command: "publish"
+      publishWebProjects: false
+      projects: "**/src/**/*Api.csproj"
+      arguments: "--output $(build.artifactstagingdirectory)"
+      zipAfterPublish: true
+
+  # Run Unit Tests
+  - task: DotNetCoreCLI@1
+    displayName: Run dotnet test on Audio Microservice
+    inputs:
+      command: "test"
+      projects: "**/src/**/*.Tests.csproj"
+      arguments: "--logger trx;logfilename=testresults.xml"
+  
+  - task: PublishTestResults@2
+    displayName: Publish Test Results
+    inputs:
+      testRunner: 'VSTest'
+      testResultsFiles: '**/testresults.xml'
+    condition: always()
+
+  # Install Angular App Dependencies
+  - task: Npm@1
+    name: InstallNpmPackages
+    displayName: Install Angular App Dependencies
+    inputs:
+      command: install
+      workingDir: 'web/src/signalr-web/SignalRMiddleware/EventApp'
+      verbose: true
+
+  # Package Angular App
+  - script: npm run dist
+    displayName: Package Angular App
+    workingDirectory: 'web/src/signalr-web/SignalRMiddleware/EventApp'
+
+  # Build the SignalR ASP.NET WebApp
+  - task: DotNetCoreCLI@2
+    inputs:
+      command: restore
+      projects: 'web/src/signalr-web/SignalRMiddleware/SignalRMiddleware.sln'
+
+  # Package Angular App and SignalR App as one artifact
+  - task: MSBuild@1
+    inputs:
+      solution: 'web/src/signalr-web/SignalRMiddleware/SignalRMiddleware.sln'
+      msbuildArguments: '/p:DeployOnBuild=true /p:WebPublishMethod=Package /p:PackageAsSingleFile=true /p:SkipInvalidConfigurations=true /p:PackageLocation="$(build.artifactstagingdirectory)\\"'
+      clean: true
+      restoreNugetPackages: true
+  # Publish the APIs as an artifact
+  - task: PublishBuildArtifacts@1
+    displayName: Publish Azure Functions
+    inputs:
+      pathToPublish: $(build.artifactstagingdirectory)
+      artifactName: functions
+      artifactType: container
+
+  # Publish the `deploy` folder as an artifact
+  - task: PublishBuildArtifacts@1
+    displayName: Publish Deployment Scripts - audio
+    inputs:
+      pathToPublish: audio/deploy
+      artifactName: deploy
+      artifactType: container
+  - task: PublishBuildArtifacts@1
+    displayName: Publish Deployment Scripts - categories
+    inputs:
+      pathToPublish: categories/deploy
+      artifactName: deploy
+      artifactType: container
+  - task: PublishBuildArtifacts@1
+    displayName: Publish Deployment Scripts - images
+    inputs:
+      pathToPublish: images/deploy
+      artifactName: deploy
+      artifactType: container
+  - task: PublishBuildArtifacts@1
+    displayName: Publish Deployment Scripts - text
+    inputs:
+      pathToPublish: text/deploy
+      artifactName: deploy
+      artifactType: container
+      
+  # Drop build artifact into staging directory for release
+  - task: PublishBuildArtifacts@1
+    inputs:
+      PathtoPublish: '$(build.artifactstagingdirectory)'
+      artifactName: webapp
+      artifactType: container
+
+  # Publish deploy artifacts into staging directory for release
+  - task: PublishBuildArtifacts@1
+    displayName: Publish Deployment Scripts
+    inputs:
+      pathToPublish: web/deploy
+      artifactName: deploy
+      artifactType: container
