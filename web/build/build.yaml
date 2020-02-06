@@ -1,11 +1,10 @@
+pool:
+  vmImage: "vs2017-win2016"
+
 # Builds the ContentReactor Front end and ASP.NET SignalR Middleware
 
 resources:
 - repo: self
-queue:
-  demands: 
-  - npm
-  - msbuild
 
 steps:
 
